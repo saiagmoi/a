@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recorrido Virtual - Proyecto Delta</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google <model-viewer> CDN (v3.5.0 LTS) -->
+  <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
+
+  <style>
+    /* Estilos base del visor 3D */
+    model-viewer {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      outline: none;
+      --poster-color: transparent;
+    }
+
+    /* Estilos para los marcadores 3D (Hotspots) */
+    .hotspot {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      position: absolute;
+      transform: translate(-50%, -50%);
+      outline: none;
+      padding: 0;
+      margin: 0;
+      transition: transform 0.2s;
+    }
+
+    .hotspot:not([data-visible]) {
+      opacity: 0.3;
+      filter: grayscale(1);
+      pointer-events: none;
+    }
+
+    /* Animación de entrada */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .animate-fadeIn {
+      animation: fadeIn 0.3s ease-out forwards;
+    }
+  </style>
+</head>
+<body class="h-full w-full overflow-hidden bg-slate-950 font-sans select-none text-white">
+
+  <!-- AVISO PROTOCOLO FILE:// (Si se abre sin servidor local) -->
+  <div id="corsWarning" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+    <div class="max-w-lg w-full bg-slate-900 border border-amber-500/40 rounded-2xl p-6 sm:p-8 shadow-2xl text-center">
+      <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+      </div>
+      <h2 class="text-2xl font-bold text-white mb-2">Se requiere un servidor local</h2>
+      <p class="text-slate-300 text-sm mb-6 leading-relaxed">
+        Abriste este archivo con <code class="px-1.5 py-0.5 bg-slate-800 text-amber-300 rounded font-mono text-xs">file://</code>.
+        Por seguridad, los navegadores bloquean la descarga de modelos 3D fuera de un servidor HTTP.
+      </p>
+      <div class="bg-slate-950/70 rounded-xl p-4 border border-white/10 text-left mb-6 space-y-2">
+        <p class="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Solución en 1 clic:</p>
+        <p class="text-sm text-slate-200">
+          👉 Doble clic en <strong class="text-white font-mono bg-white/10 px-2 py-0.5 rounded">iniciar_servidor.command</strong> dentro de esta carpeta.
+        </p>
+      </div>
+      <button onclick="document.getElementById('corsWarning').classList.add('hidden')" class="text-xs text-slate-400 hover:text-white underline">
+        Ocultar aviso
+      </button>
+    </div>
+  </div>
+
+  <!-- Banner flotante cuando está activo el Modo Marcador -->
+  <div id="bannerModoComentario" class="hidden fixed top-5 left-1/2 -translate-x-1/2 z-40 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 font-bold px-5 py-2.5 rounded-full shadow-2xl backdrop-blur-md flex items-center gap-3 text-xs sm:text-sm border border-amber-300 shadow-amber-500/20">
+    <span class="flex items-center gap-2">
+      <span class="w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
+      🎯 Hacé clic en cualquier parte de la casa para marcar y comentar
+    </span>
+    <button id="btnCancelarModo" class="bg-slate-950/80 hover:bg-slate-950 text-white text-xs px-3 py-1 rounded-full transition-colors cursor-pointer">
+      Cancelar (Esc)
+    </button>
+  </div>
+
+  <!-- Visor 3D a pantalla completa -->
+  <model-viewer
+    id="viewer"
+    src="casa.glb"
+    alt="Recorrido Virtual - Proyecto Delta"
+    camera-controls
+    auto-rotate
+    rotation-per-second="8deg"
+    auto-rotate-delay="1000"
+    touch-action="pan-y"
+    shadow-intensity="1.2"
+    shadow-softness="0.75"
+    exposure="1.05"
+    ar
+    ar-modes="webxr scene-viewer quick-look"
+    interaction-prompt="auto"
+    loading="eager"
+    class="w-screen h-screen absolute inset-0 z-0">
+
+    <!-- Indicador de Carga Personalizado -->
+    <div id="loader" slot="progress-bar" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm z-30 transition-opacity duration-500">
+      <div class="flex flex-col items-center gap-4 max-w-xs w-full px-6">
+        <div class="relative w-12 h-12">
+          <div class="w-12 h-12 rounded-full border-2 border-emerald-500/20 border-t-emerald-400 animate-spin"></div>
+        </div>
+        <div class="text-center">
+          <p class="text-sm font-semibold text-white tracking-wide">Cargando Recorrido 3D...</p>
+          <p id="progressText" class="text-xs text-slate-400 mt-1">Preparando texturas y geometría</p>
+        </div>
+        <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+          <div id="progressBar" class="bg-gradient-to-r from-emerald-400 to-teal-400 h-full w-0 transition-all duration-300"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Botón AR nativo para móviles -->
+    <button slot="ar-button" class="absolute bottom-6 right-6 z-20 flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/90 hover:bg-white text-slate-800 font-medium text-sm backdrop-blur-md shadow-lg transition-transform active:scale-95">
+      <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5" />
+      </svg>
+      Ver en tu espacio (AR)
+    </button>
+  </model-viewer>
+
+  <!-- Panel flotante superior izquierdo -->
+  <aside class="absolute top-5 left-5 z-20 w-[calc(100vw-2.5rem)] max-w-sm rounded-2xl bg-slate-900/75 backdrop-blur-xl border border-white/15 p-5 sm:p-6 shadow-2xl shadow-black/50">
+    <!-- Etiqueta superior -->
+    <div class="flex items-center justify-between mb-3">
+      <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+        3D Interactivo
+      </span>
+      <span class="text-xs text-slate-400">Entrega Inmediata</span>
+    </div>
+
+    <!-- Título principal -->
+    <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-white mb-2 leading-tight">
+      Recorrido Virtual - Proyecto Delta
+    </h1>
+
+    <!-- Descripción breve -->
+    <p class="text-slate-300 text-xs sm:text-sm leading-relaxed mb-4">
+      Explorá el departamento en 360°, hacé zoom, rotá y seleccioná cualquier parte para dejar anotaciones y comentarios compartidos.
+    </p>
+
+    <!-- Características rápidas -->
+    <div class="grid grid-cols-2 gap-2 mb-4 text-xs text-slate-300">
+      <div class="bg-white/5 border border-white/10 rounded-lg p-2 flex items-center gap-2">
+        <svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        </svg>
+        <span>Monoambiente Premium</span>
+      </div>
+      <div class="bg-white/5 border border-white/10 rounded-lg p-2 flex items-center gap-2">
+        <svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+        </svg>
+        <span>V-Ray Baked HD</span>
+      </div>
+    </div>
+
+    <!-- SECCIÓN PRECIO: Botón que se transforma al hacer clic -->
+    <div id="seccionPrecio" class="mb-4">
+      <!-- Botón inicial 'Consultar Precio' -->
+      <button
+        id="btnConsultar"
+        class="group w-full py-3.5 px-5 rounded-xl font-bold text-sm sm:text-base text-white tracking-wide bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:via-teal-400 hover:to-cyan-400 active:scale-[0.98] shadow-lg shadow-emerald-500/30 hover:shadow-cyan-500/40 transition-all duration-300 flex items-center justify-center gap-2.5 cursor-pointer">
+        <span>Consultar Precio</span>
+        <svg class="w-4 h-4 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+        </svg>
+      </button>
+
+      <!-- Texto destacado en verde que reemplaza al botón -->
+      <div id="textoPrecio" class="hidden w-full py-3.5 px-4 rounded-xl bg-emerald-500/20 border-2 border-emerald-400 shadow-xl shadow-emerald-500/25 text-center animate-fadeIn">
+        <span class="text-[11px] uppercase font-bold tracking-widest text-emerald-400 block mb-0.5">Precio de Lista Oficial</span>
+        <span class="text-xl sm:text-2xl font-black text-emerald-300 tracking-tight drop-shadow-sm">Valor: USD 250.000</span>
+      </div>
+    </div>
+
+    <!-- SECCIÓN COMENTARIOS Y ANOTACIONES 3D -->
+    <div class="border-t border-white/10 pt-3.5 space-y-2">
+      <div class="flex items-center justify-between text-xs text-slate-300 mb-1">
+        <span class="font-semibold text-emerald-400 flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
+          Anotaciones 3D
+        </span>
+        <button id="btnVerComentarios" class="text-[11px] text-slate-400 hover:text-white underline flex items-center gap-1 cursor-pointer">
+          <span id="contadorComentarios">0 anotaciones</span>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <!-- Botón para activar el modo de marcado 3D -->
+        <button
+          id="btnModoMarcar"
+          class="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 active:scale-95 border border-white/15 text-white font-semibold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+          <span>📍 Marcar punto</span>
+        </button>
+
+        <!-- Botón para copiar enlace y compartir -->
+        <button
+          id="btnCompartir"
+          class="w-full py-2.5 px-3 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/50 active:scale-95 border border-emerald-500/40 text-emerald-200 font-semibold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+          <span>🔗 Compartir</span>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- PANEL LATERAL (DRAWER) DE COMENTARIOS -->
+  <div id="drawerComentarios" class="fixed top-0 right-0 h-full w-80 max-w-[88vw] bg-slate-900/95 backdrop-blur-xl border-l border-white/15 z-40 p-5 shadow-2xl transform translate-x-full transition-transform duration-300 flex flex-col">
+    <div class="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
+      <div class="flex items-center gap-2">
+        <span class="text-sm font-bold text-emerald-400">💬 Comentarios de la Casa</span>
+        <span id="badgeCantComentarios" class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold">0</span>
+      </div>
+      <button id="btnCerrarDrawer" class="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <!-- Lista scrolleable de comentarios -->
+    <div id="listaComentarios" class="flex-1 overflow-y-auto space-y-2.5 pr-1 text-xs">
+      <!-- Los ítems se inyectan dinámicamente -->
+    </div>
+
+    <!-- Acciones inferiores del panel -->
+    <div class="pt-4 border-t border-white/10 space-y-2">
+      <button id="btnCopiarEnlaceDrawer" class="w-full py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 transition-all cursor-pointer">
+        <span>🔗 Copiar Enlace con Comentarios</span>
+      </button>
+      <button id="btnNuevoRecorridoLimpio" class="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-white/10 text-[11px] transition-all cursor-pointer flex items-center justify-center gap-1.5">
+        <span>✨ Nuevo recorrido en limpio (para otro contacto)</span>
+      </button>
+      <button id="btnLimpiarTodo" class="w-full py-1.5 px-3 rounded-xl hover:bg-rose-500/20 text-rose-400 text-[10px] transition-all cursor-pointer">
+        Borrar todos los comentarios de este hilo
+      </button>
+    </div>
+  </div>
+
+  <!-- MODAL PARA INGRESAR NUEVO COMENTARIO -->
+  <div id="modalNuevoComentario" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm opacity-0 pointer-events-none transition-all duration-300">
+    <div class="relative w-full max-w-sm bg-slate-900 border border-emerald-500/40 rounded-2xl p-5 sm:p-6 shadow-2xl text-white transform scale-95 transition-all duration-300" id="cardNuevoComentario">
+      <div class="flex items-center gap-2 mb-1">
+        <div class="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm font-bold">📍</div>
+        <h3 class="text-base font-bold text-white">Nuevo Comentario 3D</h3>
+      </div>
+      <p class="text-xs text-slate-400 mb-4">Marcaste una zona del modelo. Escribí tu observación:</p>
+
+      <form id="formNuevoComentario" class="space-y-3">
+        <div>
+          <label class="block text-[11px] font-medium text-slate-300 mb-1">Tu Nombre o Rol (opcional)</label>
+          <input type="text" id="inputAutor" placeholder="Ej: Cliente, Arquitecto, etc." class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500">
+        </div>
+        <div>
+          <label class="block text-[11px] font-medium text-slate-300 mb-1">Observación o Consulta *</label>
+          <textarea id="inputTextoComentario" required rows="3" placeholder="Ej: ¿Qué medida tiene esta ventana? / Me gustaría cambiar el color de este muro..." class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"></textarea>
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button type="button" id="btnCancelarNuevoComentario" class="flex-1 py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold cursor-pointer">
+            Cancelar
+          </button>
+          <button type="submit" class="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 text-xs font-bold shadow-lg shadow-emerald-500/25 cursor-pointer">
+            Guardar Punto
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Controles y tips de navegación (inferior izquierdo) -->
+  <div class="absolute bottom-5 left-5 z-10 hidden sm:flex items-center gap-3 text-xs text-slate-400 bg-slate-900/50 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 pointer-events-none">
+    <span class="flex items-center gap-1.5">
+      <kbd class="px-1.5 py-0.5 rounded bg-white/10 border border-white/20 text-[10px] text-white">Click izq.</kbd> Rotar
+    </span>
+    <span class="text-white/20">•</span>
+    <span class="flex items-center gap-1.5">
+      <kbd class="px-1.5 py-0.5 rounded bg-white/10 border border-white/20 text-[10px] text-white">Rueda</kbd> Zoom
+    </span>
+    <span class="text-white/20">•</span>
+    <span class="flex items-center gap-1.5">
+      <kbd class="px-1.5 py-0.5 rounded bg-white/10 border border-white/20 text-[10px] text-white">Click der.</kbd> Mover
+    </span>
+  </div>
+
+  <!-- NOTIFICACIÓN TOAST FLOTANTE -->
+  <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none bg-slate-900/95 border border-emerald-500/50 text-white px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md text-xs sm:text-sm flex items-center gap-3">
+    <span id="toastIcon" class="text-lg">✅</span>
+    <span id="toastMsg" class="font-medium">Mensaje</span>
+  </div>
+
+  <!-- ========================================== -->
+  <!-- BLOQUE <SCRIPT> DE JAVASCRIPT SOLICITADO    -->
+  <!-- ========================================== -->
+  <script>
+    // ---------------------------------------------------------------
+    // 1. REEMPLAZO DEL BOTÓN 'CONSULTAR PRECIO' POR EL VALOR DESTACADO
+    // ---------------------------------------------------------------
+    const btnConsultar = document.getElementById('btnConsultar');
+    const textoPrecio = document.getElementById('textoPrecio');
+
+    btnConsultar.addEventListener('click', () => {
+      btnConsultar.classList.add('hidden');
+      textoPrecio.classList.remove('hidden');
+    });
+
+    // ---------------------------------------------------------------
+    // 2. DETECCIÓN PROTOCOLO FILE:// Y CARGA DE MODELO 3D
+    // ---------------------------------------------------------------
+    if (window.location.protocol === 'file:') {
+      document.getElementById('corsWarning').classList.remove('hidden');
+    }
+
+    const viewer = document.getElementById('viewer');
+    const loader = document.getElementById('loader');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+
+    viewer.addEventListener('progress', (e) => {
+      const percent = Math.round(e.detail.totalProgress * 100);
+      progressBar.style.width = `${percent}%`;
+      progressText.textContent = `Descargando geometría: ${percent}%`;
+      if (percent >= 100) {
+        progressText.textContent = 'Renderizando escena 3D...';
+      }
+    });
+
+    viewer.addEventListener('load', () => {
+      console.log('✅ ¡Modelo 3D cargado exitosamente!');
+      loader.style.opacity = '0';
+      setTimeout(() => loader.style.display = 'none', 500);
+    });
+
+    viewer.addEventListener('error', (err) => {
+      console.error('❌ Error al cargar modelo:', err);
+      progressText.textContent = 'Error al cargar modelo 3D. Asegurate de usar un servidor local.';
+      progressText.classList.add('text-rose-400');
+    });
+
+    // ---------------------------------------------------------------
+    // 3. SISTEMA DE ANOTACIONES 3D, AUTO-GUARDADO Y COMPARTIR
+    // ---------------------------------------------------------------
+    const STORAGE_KEY = 'proyecto_delta_comentarios_3d';
+    let comentarios = [];
+    let modoMarcadorActivo = false;
+    let posicionTemporal = null;
+    let pointerDownCoord = { x: 0, y: 0 };
+
+    // Elementos DOM de anotaciones
+    const btnModoMarcar = document.getElementById('btnModoMarcar');
+    const bannerModoComentario = document.getElementById('bannerModoComentario');
+    const btnCancelarModo = document.getElementById('btnCancelarModo');
+    const modalNuevoComentario = document.getElementById('modalNuevoComentario');
+    const cardNuevoComentario = document.getElementById('cardNuevoComentario');
+    const formNuevoComentario = document.getElementById('formNuevoComentario');
+    const inputAutor = document.getElementById('inputAutor');
+    const inputTextoComentario = document.getElementById('inputTextoComentario');
+    const btnCancelarNuevoComentario = document.getElementById('btnCancelarNuevoComentario');
+
+    const drawerComentarios = document.getElementById('drawerComentarios');
+    const btnVerComentarios = document.getElementById('btnVerComentarios');
+    const btnCerrarDrawer = document.getElementById('btnCerrarDrawer');
+    const listaComentarios = document.getElementById('listaComentarios');
+    const contadorComentarios = document.getElementById('contadorComentarios');
+    const badgeCantComentarios = document.getElementById('badgeCantComentarios');
+
+    const btnCompartir = document.getElementById('btnCompartir');
+    const btnCopiarEnlaceDrawer = document.getElementById('btnCopiarEnlaceDrawer');
+    const btnLimpiarTodo = document.getElementById('btnLimpiarTodo');
+
+    // Toast helper
+    function mostrarToast(mensaje, icono = '✅') {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toastMsg');
+      const toastIcon = document.getElementById('toastIcon');
+      toastMsg.textContent = mensaje;
+      toastIcon.textContent = icono;
+      toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+      setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
+      }, 3500);
+    }
+
+    // Activar/desactivar Modo Marcador
+    function toggleModoMarcador(activar) {
+      modoMarcadorActivo = (activar !== undefined) ? activar : !modoMarcadorActivo;
+      if (modoMarcadorActivo) {
+        bannerModoComentario.classList.remove('hidden');
+        viewer.style.cursor = 'crosshair';
+        btnModoMarcar.classList.add('bg-amber-500/20', 'border-amber-400', 'text-amber-300');
+      } else {
+        bannerModoComentario.classList.add('hidden');
+        viewer.style.cursor = 'default';
+        btnModoMarcar.classList.remove('bg-amber-500/20', 'border-amber-400', 'text-amber-300');
+      }
+    }
+
+    btnModoMarcar.addEventListener('click', () => toggleModoMarcador());
+    btnCancelarModo.addEventListener('click', () => toggleModoMarcador(false));
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        toggleModoMarcador(false);
+        cerrarModalComentario();
+        cerrarDrawer();
+      }
+    });
+
+    // Detectar clic vs arrastre en el visor 3D
+    viewer.addEventListener('pointerdown', (e) => {
+      pointerDownCoord = { x: e.clientX, y: e.clientY };
+    });
+
+    viewer.addEventListener('click', (e) => {
+      if (!modoMarcadorActivo) return;
+
+      // Si el usuario arrastró para rotar la cámara, no crear marcador
+      const dist = Math.hypot(e.clientX - pointerDownCoord.x, e.clientY - pointerDownCoord.y);
+      if (dist > 8) return;
+
+      // Obtener posición 3D exacta sobre la malla
+      const hit = viewer.positionAndNormalFromPoint(e.clientX, e.clientY);
+      if (hit) {
+        posicionTemporal = {
+          position: hit.position.toString(),
+          normal: hit.normal.toString()
+        };
+        toggleModoMarcador(false);
+        abrirModalComentario();
+      }
+    });
+
+    // Modales de comentario
+    function abrirModalComentario() {
+      modalNuevoComentario.classList.remove('opacity-0', 'pointer-events-none');
+      cardNuevoComentario.classList.remove('scale-95');
+      cardNuevoComentario.classList.add('scale-100');
+      setTimeout(() => inputTextoComentario.focus(), 100);
+    }
+
+    function cerrarModalComentario() {
+      modalNuevoComentario.classList.add('opacity-0', 'pointer-events-none');
+      cardNuevoComentario.classList.remove('scale-100');
+      cardNuevoComentario.classList.add('scale-95');
+      formNuevoComentario.reset();
+      posicionTemporal = null;
+    }
+
+    btnCancelarNuevoComentario.addEventListener('click', cerrarModalComentario);
+
+    // Guardar nuevo comentario
+    formNuevoComentario.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!posicionTemporal) return;
+
+      const nuevo = {
+        id: 'c_' + Date.now(),
+        position: posicionTemporal.position,
+        normal: posicionTemporal.normal,
+        autor: inputAutor.value.trim() || 'Usuario',
+        texto: inputTextoComentario.value.trim(),
+        fecha: new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' }) + ' ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+      };
+
+      comentarios.push(nuevo);
+      guardarEnStorage();
+      actualizarHashUrl();
+      renderizarHotspots();
+      cerrarModalComentario();
+      mostrarToast('¡Punto 3D marcado y guardado!');
+    });
+
+    // Eliminar comentario
+    window.eliminarComentario = function(id, event) {
+      if (event) event.stopPropagation();
+      comentarios = comentarios.filter(c => c.id !== id);
+      guardarEnStorage();
+      actualizarHashUrl();
+      renderizarHotspots();
+      mostrarToast('Comentario eliminado', '🗑️');
+    };
+
+    // Enfocar cámara al comentario
+    window.enfocarPunto = function(positionStr) {
+      viewer.cameraTarget = positionStr;
+      cerrarDrawer();
+    };
+
+    // Renderizar Hotspots dentro de <model-viewer>
+    function renderizarHotspots() {
+      // Eliminar hotspots anteriores
+      const viejosHotspots = viewer.querySelectorAll('.hotspot-generado');
+      viejosHotspots.forEach(el => el.remove());
+
+      // Crear botones hotspot para cada comentario
+      comentarios.forEach((c, index) => {
+        const btn = document.createElement('button');
+        btn.className = 'hotspot hotspot-generado group';
+        btn.slot = `hotspot-${c.id}`;
+        btn.dataset.position = c.position;
+        btn.dataset.normal = c.normal;
+        btn.dataset.visibilityAttribute = 'visible';
+
+        btn.innerHTML = `
+          <div class="relative flex items-center justify-center">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-7 w-7 bg-emerald-500 text-slate-950 font-black text-xs items-center justify-center shadow-lg ring-2 ring-white group-hover:scale-125 transition-transform">
+              ${index + 1}
+            </span>
+          </div>
+          <div class="hidden group-hover:block group-focus:block absolute bottom-9 left-1/2 -translate-x-1/2 w-64 p-3.5 bg-slate-900/95 backdrop-blur-md rounded-xl border border-white/20 text-white shadow-2xl text-left pointer-events-auto z-40">
+            <div class="flex items-center justify-between border-b border-white/10 pb-1.5 mb-1.5 text-[11px]">
+              <span class="font-bold text-emerald-400 truncate">#${index + 1} ${escapeHTML(c.autor)}</span>
+              <span class="text-slate-400 text-[10px] shrink-0">${c.fecha || ''}</span>
+            </div>
+            <p class="text-xs text-slate-200 leading-relaxed mb-2.5 break-words">${escapeHTML(c.texto)}</p>
+            <div class="flex justify-between items-center text-[10px] pt-1 border-t border-white/10">
+              <button onclick="eliminarComentario('${c.id}', event)" class="text-rose-400 hover:text-rose-300 underline cursor-pointer">
+                Eliminar
+              </button>
+              <span class="text-slate-500">Punto 3D</span>
+            </div>
+          </div>
+        `;
+        viewer.appendChild(btn);
+      });
+
+      actualizarListaDrawer();
+    }
+
+    // Actualizar la lista del panel lateral
+    function actualizarListaDrawer() {
+      const cantidad = comentarios.length;
+      contadorComentarios.textContent = `${cantidad} anotación${cantidad === 1 ? '' : 'es'}`;
+      badgeCantComentarios.textContent = cantidad;
+
+      if (cantidad === 0) {
+        listaComentarios.innerHTML = `
+          <div class="text-center py-10 text-slate-400">
+            <p class="text-3xl mb-2">📍</p>
+            <p class="font-medium text-slate-300">Sin anotaciones todavía</p>
+            <p class="text-[11px] text-slate-500 mt-1">Hacé clic en 'Marcar punto' y seleccioná una zona de la casa.</p>
+          </div>
+        `;
+        return;
+      }
+
+      listaComentarios.innerHTML = comentarios.map((c, index) => `
+        <div class="p-3 bg-slate-800/80 hover:bg-slate-800 border border-white/10 rounded-xl transition-all">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="font-bold text-emerald-400 flex items-center gap-1.5">
+              <span class="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] flex items-center justify-center font-black">#${index + 1}</span>
+              ${escapeHTML(c.autor)}
+            </span>
+            <span class="text-[10px] text-slate-400">${c.fecha || ''}</span>
+          </div>
+          <p class="text-slate-200 text-xs mb-2 leading-relaxed break-words">${escapeHTML(c.texto)}</p>
+          <div class="flex justify-between items-center pt-1 border-t border-white/5 text-[11px]">
+            <button onclick="enfocarPunto('${c.position}')" class="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer font-medium">
+              👁️ Enfocar en 3D
+            </button>
+            <button onclick="eliminarComentario('${c.id}', event)" class="text-rose-400 hover:text-rose-300 underline cursor-pointer">
+              Eliminar
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // Drawer de comentarios
+    function abrirDrawer() {
+      drawerComentarios.classList.remove('translate-x-full');
+    }
+    function cerrarDrawer() {
+      drawerComentarios.classList.add('translate-x-full');
+    }
+    btnVerComentarios.addEventListener('click', abrirDrawer);
+    btnCerrarDrawer.addEventListener('click', cerrarDrawer);
+
+    // Borrar todos
+    btnLimpiarTodo.addEventListener('click', () => {
+      if (confirm('¿Estás seguro de que querés borrar todos los comentarios de este hilo?')) {
+        comentarios = [];
+        guardarEnStorage();
+        actualizarHashUrl();
+        renderizarHotspots();
+        mostrarToast('Comentarios de este hilo borrados', '🗑️');
+      }
+    });
+
+    // Iniciar nuevo recorrido limpio (para otro cliente o contacto)
+    const btnNuevoRecorridoLimpio = document.getElementById('btnNuevoRecorridoLimpio');
+    btnNuevoRecorridoLimpio.addEventListener('click', () => {
+      if (comentarios.length === 0 || confirm('¿Iniciar un recorrido limpio? Se despejarán los puntos para que puedas empezar una conversación nueva con otro contacto.')) {
+        comentarios = [];
+        localStorage.removeItem(STORAGE_KEY);
+        history.replaceState(null, '', window.location.pathname);
+        renderizarHotspots();
+        cerrarDrawer();
+        mostrarToast('Recorrido limpio listo para otro contacto', '✨');
+      }
+    });
+
+    // ---------------------------------------------------------------
+    // 4. AUTO-GUARDADO (LOCALSTORAGE) Y COMPARTIR ENLACE (URL HASH)
+    // ---------------------------------------------------------------
+    function guardarEnStorage() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(comentarios));
+      } catch (e) {
+        console.warn('No se pudo guardar en localStorage:', e);
+      }
+    }
+
+    function cargarDesdeStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) comentarios = parsed;
+        }
+      } catch (e) {
+        console.warn('Error al cargar de localStorage:', e);
+      }
+    }
+
+    // Codificar comentarios en la URL para compartir
+    function obtenerUrlCompartible() {
+      const dataStr = JSON.stringify(comentarios);
+      // Codificación base64 segura para UTF-8
+      const b64 = btoa(encodeURIComponent(dataStr).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)));
+      const base = window.location.href.split('#')[0];
+      return `${base}#comentarios=${encodeURIComponent(b64)}`;
+    }
+
+    function actualizarHashUrl() {
+      if (comentarios.length > 0) {
+        const dataStr = JSON.stringify(comentarios);
+        const b64 = btoa(encodeURIComponent(dataStr).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)));
+        history.replaceState(null, '', `#comentarios=${encodeURIComponent(b64)}`);
+      } else {
+        history.replaceState(null, '', window.location.pathname);
+      }
+    }
+
+    // Copiar enlace al portapapeles
+    function copiarEnlaceCompartible() {
+      const url = obtenerUrlCompartible();
+      navigator.clipboard.writeText(url).then(() => {
+        mostrarToast('¡Enlace copiado! Pasáselo por WhatsApp o Mail.', '📋');
+      }).catch(() => {
+        prompt('Copiá este enlace para compartir:', url);
+      });
+    }
+
+    btnCompartir.addEventListener('click', copiarEnlaceCompartible);
+    btnCopiarEnlaceDrawer.addEventListener('click', copiarEnlaceCompartible);
+
+    // Cargar comentarios desde la URL al abrir
+    function cargarDesdeUrl() {
+      const hash = window.location.hash;
+      if (hash && hash.includes('comentarios=')) {
+        try {
+          const partes = hash.substring(1).split('&');
+          let b64 = null;
+          partes.forEach(p => {
+            if (p.startsWith('comentarios=')) b64 = decodeURIComponent(p.replace('comentarios=', ''));
+          });
+          if (b64) {
+            const jsonStr = decodeURIComponent(Array.prototype.map.call(atob(b64), (c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+            const comentariosUrl = JSON.parse(jsonStr);
+
+            if (Array.isArray(comentariosUrl)) {
+              // Carga EXCLUSIVAMENTE los comentarios pertenecientes a este enlace privado
+              comentarios = comentariosUrl;
+              guardarEnStorage();
+              if (comentarios.length > 0) {
+                mostrarToast(`🔒 Se cargaron ${comentarios.length} comentarios de este hilo privado.`, '💬');
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Error al decodificar comentarios de la URL:', err);
+        }
+      }
+    }
+
+    function escapeHTML(str) {
+      if (!str) return '';
+      return str.replace(/[&<>'"]/g, tag => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&#39;',
+        '"': '&quot;'
+      }[tag] || tag));
+    }
+
+    // Inicialización
+    cargarDesdeStorage();
+    cargarDesdeUrl();
+    renderizarHotspots();
+  </script>
+
+</body>
+</html>

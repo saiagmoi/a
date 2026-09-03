@@ -1,0 +1,16 @@
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Dependencias y logs
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Netlify y builds
+dist/
+.netlify/
+
+# Modelo 3D alternativo duplicado (se usa casa.glb)
+studio_apartment_vray_baked_textures_included.glb

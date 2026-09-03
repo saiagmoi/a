@@ -1,0 +1,17 @@
+# Configuración de Netlify para Visor Inmobiliario 3D
+[build]
+  publish = "."
+  command = ""
+
+# Cabeceras y optimización de caché para el modelo 3D
+[[headers]]
+  for = "*.glb"
+  [headers.values]
+    Content-Type = "model/gltf-binary"
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
